@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>極限ブロック崩し - Accelerate & Shrink</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* タッチデバイスでの不要なスクロールやジェスチャーを防止 */
+        canvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col justify-between overflow-x-hidden font-sans select-none">
+
+    <!-- ヘッダー -->
+    <header class="py-4 bg-slate-800 border-b border-slate-700 shadow-lg text-center px-4">
+        <h1 class="text-2xl md:text-3xl font-extrabold tracking-wider bg-gradient-to-r from-red-500 via-yellow-400 to-emerald-400 bg-clip-text text-transparent">
+            SPEED & SHRINK BREAKOUT
+        </h1>
+        <p class="text-xs text-slate-400 mt-1">打つたびにパドルは縮み、ボールは無限に加速する！</p>
+    </header>
+
+    <!-- メインゲームエリア -->
+    <main class="flex-grow flex flex-col items-center justify-center p-4 max-w-4xl mx-auto w-full">
+        <!-- スコア・情報パネル -->
+        <div class="w-full max-w-[600px] flex justify-between items-center mb-3 bg-slate-800/80 p-3 rounded-xl border border-slate-700 backdrop-blur">
+            <div class="flex flex-col">
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wide">SCORE</span>
+                <span id="score-val" class="text-2xl font-black text-emerald-400">0</span>
+            </div>
+            <div class="flex flex-col items-center">
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wide">SPEED</span>
+                <span id="speed-val" class="text-lg font-bold text-amber-400">100%</span>
+            </div>
+            <div class="flex flex-col items-center">
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wide">PADDLE SIZE</span>
+                <span id="paddle-val" class="text-lg font-bold text-cyan-400">100%</span>
+            </div>
+            <div class="flex flex-col items-end">
+                <span class="text-xs text-slate-400 font-bold uppercase tracking-wide">BEST SCORE</span>
+                <span id="highscore-val" class="text-2xl font-black text-pink-400">0</span>
+            </div>
+        </div>
+
+        <!-- 現在のモード表示バッジ -->
+        <div class="w-full max-w-[600px] mb-2 flex justify-end">
+            <span id="mode-badge" class="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-500/20 text-red-400 border border-red-500/30">
+                本番モード
+            </span>
+        </div>
+
+        <!-- キャンバスコンテナ -->
+        <div class="relative w-full max-w-[600px] aspect-[4/3] bg-black rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-600" id="canvas-container">
+            <canvas id="game-canvas" class="w-full h-full block"></canvas>
+
+            <!-- スタート/ポーズ/ゲームオーバー オーバーレイ -->
+            <div id="overlay" class="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center transition-all duration-300">
+                <div id="overlay-content" class="max-w-md w-full">
+                    <h2 id="overlay-title" class="text-3xl md:text-4xl font-black text-yellow-400 mb-4 animate-pulse">
+                        GAME START
+                    </h2>
+                    <p id="overlay-desc" class="text-slate-300 text-xs md:text-sm mb-6 leading-relaxed">
+                        パドルは最初はとても長いですが、ボールを弾き返すたびに徐々に短くなります（最低値あり）。<br>
+                        ボールは壁やブロック、パドルに当たるたびに<span class="text-red-400 font-bold">際限なく高速化</span>します！
+                    </p>
+
+                    <!-- モード選択アクションボタン（2カラム配置） -->
+                    <div class="flex flex-col sm:flex-row gap-3 justify-center items-stretch w-full px-4">
+                        <button id="start-normal-btn" class="flex-1 px-5 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-sm sm:text-base rounded-full shadow-lg shadow-emerald-900/40 hover:scale-105 transition active:scale-95">
+                            本番モードで開始
+                        </button>
+                        <button id="start-practice-btn" class="flex-1 px-5 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white font-bold text-sm sm:text-base rounded-full shadow-lg shadow-blue-900/40 hover:scale-105 transition active:scale-95">
+                            練習モードで開始
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作方法の補助＆コントローラー -->
+        <div class="w-full max-w-[600px] mt-4 flex flex-col gap-3">
+
+            <!-- 操作モード切り替えトグル (ゲーム枠外に配置) -->
+            <div class="bg-slate-800 p-1.5 rounded-xl border border-slate-700 flex shadow-inner">
+                <button id="mode-keyboard-btn" class="flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 bg-sky-500 text-white shadow-md">
+                    ⌨️ キーボード操作優先
+                </button>
+                <button id="mode-pointer-btn" class="flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 text-slate-400 hover:text-slate-200">
+                    👆 マウス・タッチ操作優先
+                </button>
+            </div>
+
+            <!-- 操作説明テキスト -->
+            <div id="control-hint-text" class="text-center text-xs text-slate-400 px-2 h-5">
+                操作方法: 左右矢印キー [←][→] または A/D キー
+            </div>
+
+            <!-- 一時停止 / リセットボタン -->
+            <div class="flex justify-center gap-4">
+                <button id="pause-btn" class="px-5 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-xs text-slate-300 font-semibold rounded-lg border border-slate-700 transition">
+                    一時停止 (ESC / Space)
+                </button>
+                <button id="reset-btn" class="px-5 py-2 bg-rose-950/40 hover:bg-rose-900/60 text-xs text-rose-300 font-semibold rounded-lg border border-rose-800/50 transition">
+                    リセット
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- フッター -->
+    <footer class="py-3 bg-slate-950 text-center text-[10px] text-slate-500 border-t border-slate-900">
+        &copy; 2026 Accelerate & Shrink Breakout. All Rights Reserved.
+    </footer>
+
+    <!-- JavaScript ゲームロジック -->
+    <script>
+        // キャンバスとコンテクストの取得
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        // UI 要素
+        const scoreVal = document.getElementById('score-val');
+        const speedVal = document.getElementById('speed-val');
+        const paddleVal = document.getElementById('paddle-val');
+        const highscoreVal = document.getElementById('highscore-val');
+        const modeBadge = document.getElementById('mode-badge');
+
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlay-title');
+        const overlayDesc = document.getElementById('overlay-desc');
+        const startNormalBtn = document.getElementById('start-normal-btn');
+        const startPracticeBtn = document.getElementById('start-practice-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        // 操作モード選択ボタン
+        const modeKeyboardBtn = document.getElementById('mode-keyboard-btn');
+        const modePointerBtn = document.getElementById('mode-pointer-btn');
+        const controlHintText = document.getElementById('control-hint-text');
+
+        // 基本の仮想解像度
+        const V_WIDTH = 800;
+        const V_HEIGHT = 600;
+        canvas.width = V_WIDTH;
+        canvas.height = V_HEIGHT;
+
+        // ハイスコアのローカルストレージ管理
+        let highScore = localStorage.getItem('breakout_high_score') || 0;
+        highscoreVal.textContent = highScore;
+
+        // ゲームステート
+        let gameState = 'START'; // 'START', 'PLAYING', 'PAUSED', 'GAMEOVER', 'GAMECLEAR'
+        let gameMode = 'normal'; // 'normal' (本番) or 'practice' (練習)
+        let controlMode = 'keyboard'; // 'keyboard' (キーボード) or 'pointer' (マウス・タッチ)
+        let score = 0;
+        let animationFrameId = null;
+
+        // パドルの調整パラメータ
+        const INITIAL_PADDLE_WIDTH = 350; // 開始時の長い板の幅
+        const MIN_PADDLE_WIDTH = 60;     // パドルの最小サイズ制限
+        const PADDLE_SHRINK_RATE = 15;    // ボールを返すたびに短くなる量（px）
+        const PADDLE_HEIGHT = 15;
+        const PADDLE_SPEED = 12;          // PCキーボード操作時の移動速度
+
+        // ボール調整パラメータ
+        const BALL_RADIUS = 8;
+
+        // 本番モードの速度設定
+        const NORMAL_BALL_SPEED_X = 4;
+        const NORMAL_BALL_SPEED_Y = -6;
+        const ACCELERATION_FACTOR = 1.04; // 通常モード反射時（4%加速）
+
+        // 練習モードの速度設定 (少し遅め、加速なし)
+        const PRACTICE_BALL_SPEED_X = 2.8;
+        const PRACTICE_BALL_SPEED_Y = -4.2;
+        const PRACTICE_ACCELERATION_FACTOR = 1.0; // 練習モードは加速しない(1.0倍)
+
+        // 現在適用中のボールスピードと加速率
+        let currentInitialSpeedX = NORMAL_BALL_SPEED_X;
+        let currentInitialSpeedY = NORMAL_BALL_SPEED_Y;
+        let currentAcceleration = ACCELERATION_FACTOR;
+
+        // パドルオブジェクト
+        const paddle = {
+            x: 0,
+            y: V_HEIGHT - 40,
+            width: INITIAL_PADDLE_WIDTH,
+            height: PADDLE_HEIGHT,
+            color: '#38bdf8' // cyan-400
+        };
+
+        // ボールオブジェクト
+        const ball = {
+            x: 0,
+            y: 0,
+            dx: 0,
+            dy: 0,
+            color: '#f43f5e' // rose-500
+        };
+
+        // ブロックの設定
+        const blockConfig = {
+            rows: 6,
+            cols: 10,
+            padding: 6,
+            offsetTop: 70,
+            offsetLeft: 15,
+            height: 25
+        };
+        const blockWidth = (V_WIDTH - (blockConfig.offsetLeft * 2) - (blockConfig.padding * (blockConfig.cols - 1))) / blockConfig.cols;
+
+        let blocks = [];
+
+        // 入力監視
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            KeyA: false,
+            KeyD: false
+        };
+
+        // タッチ操作用のパドル目標X座標
+        let targetPaddleX = null;
+
+        // エフェクト用
+        let screenShake = 0;
+        let particles = [];
+
+        // ブロック色グラデーション
+        const blockColors = [
+            '#ef4444', // 赤
+            '#f97316', // オレンジ
+            '#f59e0b', // 黄色
+            '#10b981', // 緑
+            '#3b82f6', // 青
+            '#8b5cf6'  // 紫
+        ];
+
+        // 操作モード切り替えのUI/ロジック
+        function setControlMode(mode) {
+            controlMode = mode;
+            targetPaddleX = null; // 目標位置クリア
+
+            if (mode === 'keyboard') {
+                modeKeyboardBtn.className = "flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 bg-sky-500 text-white shadow-md";
+                modePointerBtn.className = "flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 text-slate-400 hover:text-slate-200";
+                controlHintText.textContent = "操作方法: 左右矢印キー [←][→] または A/D キー";
+            } else {
+                modeKeyboardBtn.className = "flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 text-slate-400 hover:text-slate-200";
+                modePointerBtn.className = "flex-1 py-2 text-xs font-bold rounded-lg transition duration-200 bg-sky-500 text-white shadow-md";
+                controlHintText.textContent = "操作方法: 画面ドラッグ / マウス追従";
+            }
+        }
+
+        // ボタンのイベントリスナー
+        modeKeyboardBtn.addEventListener('click', () => setControlMode('keyboard'));
+        modePointerBtn.addEventListener('click', () => setControlMode('pointer'));
+
+        // 初期化処理
+        function initGame() {
+            score = 0;
+            scoreVal.textContent = score;
+
+            // ゲームモードごとの基本パラメータ設定
+            if (gameMode === 'practice') {
+                currentInitialSpeedX = PRACTICE_BALL_SPEED_X;
+                currentInitialSpeedY = PRACTICE_BALL_SPEED_Y;
+                currentAcceleration = PRACTICE_ACCELERATION_FACTOR;
+
+                // 練習モードバッジ表示
+                modeBadge.textContent = "練習モード (加速なし)";
+                modeBadge.className = "px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30";
+            } else {
+                currentInitialSpeedX = NORMAL_BALL_SPEED_X;
+                currentInitialSpeedY = NORMAL_BALL_SPEED_Y;
+                currentAcceleration = ACCELERATION_FACTOR;
+
+                // 本番モードバッジ表示
+                modeBadge.textContent = "本番モード";
+                modeBadge.className = "px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-500/20 text-red-400 border border-red-500/30";
+            }
+
+            // パドルの初期位置と長さを設定
+            paddle.width = INITIAL_PADDLE_WIDTH;
+            paddle.x = (V_WIDTH - paddle.width) / 2;
+
+            // ボールの初期化
+            resetBall();
+
+            // ブロックの生成
+            blocks = [];
+            for (let r = 0; r < blockConfig.rows; r++) {
+                blocks[r] = [];
+                for (let c = 0; c < blockConfig.cols; c++) {
+                    blocks[r][c] = {
+                        x: blockConfig.offsetLeft + c * (blockWidth + blockConfig.padding),
+                        y: blockConfig.offsetTop + r * (blockConfig.height + blockConfig.padding),
+                        status: 1, // 1: 健在, 0: 破壊
+                        color: blockColors[r % blockColors.length]
+                    };
+                }
+            }
+
+            particles = [];
+            screenShake = 0;
+            updateStatsUI();
+        }
+
+        // ボールをパドルの中央上に再配置
+        function resetBall() {
+            ball.x = paddle.x + paddle.width / 2;
+            ball.y = paddle.y - BALL_RADIUS - 5;
+            // 打ち出し角度を毎回少しだけランダム化
+            const angleVariance = (Math.random() - 0.5) * 1.5; // ランダムなブレ
+            ball.dx = currentInitialSpeedX + angleVariance;
+            ball.dy = currentInitialSpeedY;
+        }
+
+        // パーティクル生成
+        function createParticles(x, y, color, count = 10) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    radius: Math.random() * 4 + 2,
+                    color: color,
+                    alpha: 1,
+                    decay: Math.random() * 0.03 + 0.01
+                });
+            }
+        }
+
+        // ステータス表示の更新
+        function updateStatsUI() {
+            scoreVal.textContent = score;
+
+            // 現在の速度比率を計算 (ゲームモードの初速を基準にする)
+            const baseSpeed = Math.sqrt(currentInitialSpeedX * currentInitialSpeedX + currentInitialSpeedY * currentInitialSpeedY);
+            const currentSpeed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
+            const speedPct = Math.round((currentSpeed / baseSpeed) * 100);
+            speedVal.textContent = `${speedPct}%`;
+
+            // パドルの短縮比率
+            const paddlePct = Math.round((paddle.width / INITIAL_PADDLE_WIDTH) * 100);
+            paddleVal.textContent = `${paddlePct}%`;
+
+            // ハイスコアのリアルタイム更新 (本番モードのスコアのみをハイスコアとして記録)
+            if (gameMode === 'normal' && score > highScore) {
+                highScore = score;
+                localStorage.setItem('breakout_high_score', highScore);
+                highscoreVal.textContent = highScore;
+            }
+        }
+
+        // キーボード入力リスナー
+        window.addEventListener('keydown', (e) => {
+            if (e.code in keys) {
+                keys[e.code] = true;
+            }
+            // 便利キー設定：スペース、ESCでポーズ
+            if (e.code === 'Space' || e.code === 'Escape') {
+                e.preventDefault();
+                togglePause();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code in keys) {
+                keys[e.code] = false;
+            }
+        });
+
+        // タッチ / マウスイベントによる操作
+        function handlePointerMove(e) {
+            // pointerモードではない場合は処理を無視してキーボードに専念
+            if (controlMode !== 'pointer') return;
+            if (gameState !== 'PLAYING') return;
+
+            const rect = canvas.getBoundingClientRect();
+            let clientX;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+            } else {
+                clientX = e.clientX;
+            }
+
+            const scaleX = V_WIDTH / rect.width;
+            const canvasX = (clientX - rect.left) * scaleX;
+            targetPaddleX = canvasX - paddle.width / 2;
+        }
+
+        // キャンバスに対するイベントリスナー登録
+        canvas.addEventListener('mousemove', handlePointerMove);
+        canvas.addEventListener('touchmove', (e) => {
+            handlePointerMove(e);
+            e.preventDefault(); // 画面スクロール防止
+        }, { passive: false });
+        canvas.addEventListener('touchstart', (e) => {
+            handlePointerMove(e);
+            e.preventDefault();
+        }, { passive: false });
+
+        // ポインタが離れたときは追従目標をリセット
+        window.addEventListener('touchend', () => { targetPaddleX = null; });
+        window.addEventListener('mouseup', () => { targetPaddleX = null; });
+
+        // ゲームステート操作
+        function startGame(selectedMode) {
+            gameMode = selectedMode;
+            initGame();
+            gameState = 'PLAYING';
+            overlay.classList.add('hidden');
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            gameLoop();
+        }
+
+        function togglePause() {
+            if (gameState === 'PLAYING') {
+                gameState = 'PAUSED';
+                overlayTitle.textContent = "PAUSED";
+                overlayTitle.classList.remove('text-red-500', 'text-yellow-400', 'text-emerald-400');
+                overlayTitle.classList.add('text-sky-400');
+                overlayDesc.innerHTML = "ゲームは一時停止中です。<br>以下のいずれかのモードボタン、またはスペース/Escキーで再開します。";
+
+                startNormalBtn.textContent = "本番モードで再開";
+                startPracticeBtn.textContent = "練習モードで再開";
+                overlay.classList.remove('hidden');
+            } else if (gameState === 'PAUSED') {
+                gameState = 'PLAYING';
+                overlay.classList.add('hidden');
+                gameLoop();
+            }
+        }
+
+        function triggerGameOver() {
+            gameState = 'GAMEOVER';
+            overlayTitle.textContent = "GAME OVER";
+            overlayTitle.classList.remove('text-sky-400', 'text-yellow-400', 'text-emerald-400');
+            overlayTitle.classList.add('text-red-500');
+
+            const modeText = gameMode === 'practice' ? '<span class="text-blue-400 font-bold">[練習モード]</span>' : '<span class="text-red-400 font-bold">[本番モード]</span>';
+            overlayDesc.innerHTML = `${modeText} ボールを落としてしまいました...<br>今回の最終スコア: <span class="text-emerald-400 text-xl font-bold">${score}</span> 点`;
+
+            startNormalBtn.textContent = "本番モードに挑戦！";
+            startPracticeBtn.textContent = "練習モードで再挑戦";
+            overlay.classList.remove('hidden');
+        }
+
+        function triggerGameClear() {
+            gameState = 'GAMECLEAR';
+            overlayTitle.textContent = "ALL CLEAR!!";
+            overlayTitle.classList.remove('text-sky-400', 'text-red-500', 'text-yellow-400');
+            overlayTitle.classList.add('text-emerald-400');
+
+            const modeText = gameMode === 'practice' ? '<span class="text-blue-400 font-bold">[練習モード]</span>' : '<span class="text-red-400 font-bold">[本番モード]</span>';
+            overlayDesc.innerHTML = `おめでとうございます！すべてのブロックを破壊しました！<br>${modeText} 最終スコア: <span class="text-emerald-400 text-xl font-bold">${score}</span> 点`;
+
+            startNormalBtn.textContent = "本番モードを遊ぶ";
+            startPracticeBtn.textContent = "練習モードで遊ぶ";
+            overlay.classList.remove('hidden');
+        }
+
+        // ボールとブロックの衝突判定、その他移動更新
+        function update() {
+            // パドルの移動 (操作設定に厳密に分岐)
+            if (controlMode === 'pointer') {
+                if (targetPaddleX !== null) {
+                    paddle.x += (targetPaddleX - paddle.x) * 0.45;
+                }
+            } else { // keyboardモード
+                if (keys.ArrowLeft || keys.KeyA) {
+                    paddle.x -= PADDLE_SPEED;
+                }
+                if (keys.ArrowRight || keys.KeyD) {
+                    paddle.x += PADDLE_SPEED;
+                }
+            }
+
+            // パドルの画面外はみ出し防止
+            if (paddle.x < 0) paddle.x = 0;
+            if (paddle.x + paddle.width > V_WIDTH) paddle.x = V_WIDTH - paddle.width;
+
+            // ボールの移動
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            // 壁との当たり判定（左右）
+            if (ball.x - BALL_RADIUS < 0) {
+                ball.x = BALL_RADIUS;
+                ball.dx = -ball.dx;
+                // 加速適用
+                ball.dx *= currentAcceleration;
+                ball.dy *= currentAcceleration;
+                screenShake = 3;
+                updateStatsUI();
+            } else if (ball.x + BALL_RADIUS > V_WIDTH) {
+                ball.x = V_WIDTH - BALL_RADIUS;
+                ball.dx = -ball.dx;
+                // 加速適用
+                ball.dx *= currentAcceleration;
+                ball.dy *= currentAcceleration;
+                screenShake = 3;
+                updateStatsUI();
+            }
+
+            // 壁との当たり判定（上）
+            if (ball.y - BALL_RADIUS < 0) {
+                ball.y = BALL_RADIUS;
+                ball.dy = -ball.dy;
+                // 加速適用
+                ball.dx *= currentAcceleration;
+                ball.dy *= currentAcceleration;
+                screenShake = 3;
+                updateStatsUI();
+            }
+
+            // パドルとの当たり判定（下）
+            if (ball.y + BALL_RADIUS >= paddle.y && ball.y - BALL_RADIUS <= paddle.y + paddle.height) {
+                if (ball.x >= paddle.x && ball.x <= paddle.x + paddle.width) {
+                    // パドルの衝突位置に応じて反射角度を変化させる (中央なら真上、端なら鋭角)
+                    const hitPoint = (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2); // -1.0 〜 1.0
+
+                    // 現在の合成速度を維持しつつ方向転換 (加速を乗算)
+                    const speed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy) * currentAcceleration;
+                    const maxAngle = Math.PI / 3; // 最大60度
+                    const angle = hitPoint * maxAngle;
+
+                    ball.dx = speed * Math.sin(angle);
+                    ball.dy = -speed * Math.cos(angle);
+
+                    // パドルにしっかり乗せる（食い込み防止）
+                    ball.y = paddle.y - BALL_RADIUS;
+
+                    // パドルの長さを縮小（下限をキープ）
+                    if (paddle.width > MIN_PADDLE_WIDTH) {
+                        const previousWidth = paddle.width;
+                        paddle.width = Math.max(MIN_PADDLE_WIDTH, paddle.width - PADDLE_SHRINK_RATE);
+
+                        // パドルが急に縮むことによる位置のズレを補正
+                        paddle.x += (previousWidth - paddle.width) / 2;
+                        if (paddle.x + paddle.width > V_WIDTH) {
+                            paddle.x = V_WIDTH - paddle.width;
+                        }
+                    }
+
+                    screenShake = 5;
+                    createParticles(ball.x, ball.y, paddle.color, 12);
+                    updateStatsUI();
+                }
+            }
+
+            paddle.x = ball.x - paddle.width / 2 + Math.random() * 60;
+
+            // ゲームオーバー判定
+            if (ball.y - BALL_RADIUS > V_HEIGHT) {
+                triggerGameOver();
+                return;
+            }
+
+            // ブロックとの当たり判定
+            let activeBlocksCount = 0;
+            for (let r = 0; r < blockConfig.rows; r++) {
+                for (let c = 0; c < blockConfig.cols; c++) {
+                    const b = blocks[r][c];
+                    if (b.status === 1) {
+                        activeBlocksCount++;
+
+                        // 矩形コライダーに対する詳細判定
+                        let testX = ball.x;
+                        let testY = ball.y;
+
+                        if (ball.x < b.x) testX = b.x;
+                        else if (ball.x > b.x + blockWidth) testX = b.x + blockWidth;
+
+                        if (ball.y < b.y) testY = b.y;
+                        else if (ball.y > b.y + blockConfig.height) testY = b.y + blockConfig.height;
+
+                        const distX = ball.x - testX;
+                        const distY = ball.y - testY;
+                        const distance = Math.sqrt(distX * distX + distY * distY);
+
+                        if (distance <= BALL_RADIUS) {
+                            b.status = 0;
+                            score += 10;
+                            activeBlocksCount--;
+
+                            // 接触した方向から反射
+                            if (testX === b.x || testX === b.x + blockWidth) {
+                                ball.dx = -ball.dx;
+                            } else {
+                                ball.dy = -ball.dy;
+                            }
+
+                            // 衝突後の加速
+                            ball.dx *= currentAcceleration;
+                            ball.dy *= currentAcceleration;
+
+                            // 演出効果
+                            createParticles(testX, testY, b.color, 15);
+                            screenShake = 6;
+                            updateStatsUI();
+
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 全消しクリア判定
+            if (activeBlocksCount === 0) {
+                triggerGameClear();
+            }
+
+            // パーティクルの更新
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alpha -= p.decay;
+                if (p.alpha <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // 画面揺れの減衰
+            if (screenShake > 0) {
+                screenShake *= 0.9;
+                if (screenShake < 0.2) screenShake = 0;
+            }
+        }
+
+        // 描画処理
+        function draw() {
+            ctx.save();
+
+            // 画面揺れの反映
+            if (screenShake > 0) {
+                const dx = (Math.random() - 0.5) * screenShake;
+                const dy = (Math.random() - 0.5) * screenShake;
+                ctx.translate(dx, dy);
+            }
+
+            // 背景クリア
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+            // 背景デジタルグリッドの描画
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            for (let x = 0; x < V_WIDTH; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, V_HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y < V_HEIGHT; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(V_WIDTH, y);
+                ctx.stroke();
+            }
+
+            // ブロックの描画
+            for (let r = 0; r < blockConfig.rows; r++) {
+                for (let c = 0; c < blockConfig.cols; c++) {
+                    const b = blocks[r][c];
+                    if (b.status === 1) {
+                        ctx.fillStyle = b.color;
+                        ctx.beginPath();
+                        ctx.roundRect(b.x, b.y, blockWidth, blockConfig.height, 4);
+                        ctx.fill();
+
+                        // ブロックの立体ハイライト
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+                        ctx.fillRect(b.x + 2, b.y + 2, blockWidth - 4, 3);
+                    }
+                }
+            }
+
+            // パドルの描画
+            ctx.fillStyle = paddle.color;
+            ctx.beginPath();
+            ctx.roundRect(paddle.x, paddle.y, paddle.width, paddle.height, 8);
+            ctx.fill();
+
+            // パドルのハイライト
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.fillRect(paddle.x + 4, paddle.y + 2, paddle.width - 8, 3);
+
+            // ボールの描画
+            ctx.fillStyle = ball.color;
+            ctx.shadowColor = ball.color;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0; // 影リセット
+
+            // パーティクルの描画
+            for (const p of particles) {
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
+
+        // メインループ
+        function gameLoop() {
+            if (gameState !== 'PLAYING') return;
+
+            update();
+            draw();
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // 各ボタンのアクション
+        startNormalBtn.addEventListener('click', () => {
+            if (gameState === 'PAUSED') {
+                gameState = 'PLAYING';
+                overlay.classList.add('hidden');
+                gameLoop();
+            } else {
+                startGame('normal');
+            }
+        });
+
+        startPracticeBtn.addEventListener('click', () => {
+            if (gameState === 'PAUSED') {
+                // プレイ中にポーズから「練習モード」に動的に切り替えて再開するケース
+                gameMode = 'practice';
+                currentInitialSpeedX = PRACTICE_BALL_SPEED_X;
+                currentInitialSpeedY = PRACTICE_BALL_SPEED_Y;
+                currentAcceleration = PRACTICE_ACCELERATION_FACTOR;
+
+                // 現在のボールスピードも即座に適正化する（高速から一転、緩やかにする）
+                const currentAngle = Math.atan2(ball.dx, -ball.dy); // 進行方向の角度を保存
+                const practiceSpeed = Math.sqrt(PRACTICE_BALL_SPEED_X*PRACTICE_BALL_SPEED_X + PRACTICE_BALL_SPEED_Y*PRACTICE_BALL_SPEED_Y);
+                ball.dx = practiceSpeed * Math.sin(currentAngle);
+                ball.dy = -practiceSpeed * Math.cos(currentAngle);
+
+                gameState = 'PLAYING';
+                overlay.classList.add('hidden');
+                updateStatsUI();
+                gameLoop();
+            } else {
+                startGame('practice');
+            }
+        });
+
+        pauseBtn.addEventListener('click', () => {
+            if (gameState === 'PLAYING' || gameState === 'PAUSED') {
+                togglePause();
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            const confirmReset = confirm("ゲームを最初からリセットしますか？");
+            if (confirmReset) {
+                initGame();
+                if (gameState === 'PLAYING') {
+                    resetBall();
+                } else {
+                    gameState = 'START';
+                    overlayTitle.textContent = "GAME START";
+                    overlayTitle.classList.remove('text-red-500', 'text-emerald-400', 'text-sky-400');
+                    overlayTitle.classList.add('text-yellow-400');
+                    overlayDesc.innerHTML = "パドルは最初はとても長いですが、ボールを弾き返すたびに徐々に短くなります（最低値あり）。<br>ボールは壁やブロック、パドルに当たるたびに<span class='text-red-400 font-bold'>際限なく高速化</span>します！";
+                    startNormalBtn.textContent = "本番モードで開始";
+                    startPracticeBtn.textContent = "練習モードで開始";
+                    overlay.classList.remove('hidden');
+                    draw();
+                }
+            }
+        });
+
+        // 初期描画
+        window.onload = () => {
+            setControlMode('keyboard'); // 初期はキーボードモードを有効に
+            initGame();
+            draw();
+        };
+    </script>
+</body>
+</html>
